@@ -12,6 +12,9 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -21,20 +24,28 @@ import (
 )
 
 // WsComponent 自定义原始 WebSocket 组件（行-JSON 协议）。
+//
+// 同源部署：同一端口既托管 H5 静态页（根路径 / 返回游戏页，满足健康检查），
+// 又在 /wgjx-ws 提供 WebSocket 升级（匹配前端 wgjx.vue 的 resolveUrl），
+// 避免跨域与网关透传问题，保证联网排行榜开箱可用。
 type WsComponent struct {
 	cfacade.Component
-	store    *Store
-	addr     string
-	upgrader websocket.Upgrader
-	server   *http.Server
-	mu       sync.Mutex
+	store     *Store
+	addr      string
+	staticDir string
+	upgrader  websocket.Upgrader
+	server    *http.Server
+	mu        sync.Mutex
 }
 
 // NewWsComponent 构造组件实例。
-func NewWsComponent(store *Store, addr string) *WsComponent {
+//   - addr：监听地址，如 :9105
+//   - staticDir：H5 构建产物目录（为空则不托管静态文件，仅提供 WS）
+func NewWsComponent(store *Store, addr string, staticDir string) *WsComponent {
 	return &WsComponent{
-		store: store,
-		addr:  addr,
+		store:     store,
+		addr:      addr,
+		staticDir: staticDir,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
@@ -49,14 +60,48 @@ func (c *WsComponent) Name() string { return "wgjx_ws" }
 // OnAfterInit 在所有组件 Init 之后启动 HTTP/WS 监听（独立 goroutine，不阻塞主流程）。
 func (c *WsComponent) OnAfterInit() {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", c.handleWs)
+	// WebSocket 升级端点：匹配前端 wgjx.vue resolveUrl 的 /wgjx-ws。
+	mux.HandleFunc("/wgjx-ws", c.handleWs)
+	// 同源托管 H5 静态页（根路径提供游戏页，满足发布平台 HTTP 探活）。
+	if c.staticDir != "" {
+		mux.HandleFunc("/", c.handleStatic)
+	}
 	c.server = &http.Server{Addr: c.addr, Handler: mux}
 	go func() {
-		clog.Infof("[wgjx] raw websocket listening at %s", c.addr)
+		clog.Infof("[wgjx] http+websocket listening at %s (staticDir=%q)", c.addr, c.staticDir)
 		if err := c.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			clog.Errorf("[wgjx] ws server error: %v", err)
+			clog.Errorf("[wgjx] http server error: %v", err)
 		}
 	}()
+}
+
+// handleStatic 提供 H5 静态资源，并对无扩展名的路由回退到 index.html（SPA 兼容）。
+func (c *WsComponent) handleStatic(w http.ResponseWriter, r *http.Request) {
+	upath := r.URL.Path
+	if upath == "" || upath == "/" {
+		upath = "/index.html"
+	}
+	// 防目录穿越：先把请求路径规整到以 "/" 开头的相对路径，再 Join 到 staticDir。
+	clean := path.Clean("/" + strings.TrimPrefix(upath, "/"))
+	full := filepath.Join(c.staticDir, clean)
+	// 二次校验：确保最终路径仍处于 staticDir 之内。
+	absRoot, _ := filepath.Abs(c.staticDir)
+	absFull, _ := filepath.Abs(full)
+	if !strings.HasPrefix(absFull, absRoot+string(os.PathSeparator)) && absFull != absRoot {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	info, err := os.Stat(full)
+	if err != nil || info.IsDir() {
+		// 文件不存在或为目录：SPA 回退（仅对无扩展名路径，避免误吞真实静态资源）。
+		if filepath.Ext(upath) == "" {
+			http.ServeFile(w, r, filepath.Join(c.staticDir, "index.html"))
+			return
+		}
+		http.NotFound(w, r)
+		return
+	}
+	http.ServeFile(w, r, full)
 }
 
 // OnStop 关闭监听并落盘。

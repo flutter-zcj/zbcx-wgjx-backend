@@ -13,23 +13,34 @@
 package main
 
 import (
+	"os"
+
 	cherry "github.com/cherry-game/cherry"
 	cserializer "github.com/cherry-game/cherry/net/serializer"
 )
 
 const (
 	dataFile   = "./wgjx_data.json"
-	listenAddr = ":9105"
 	configPath = "./config/wgjx.json"
+	staticDir  = "./public" // 前端 H5 构建产物（dist/build/h5）拷贝至此
 )
+
+// listenAddr 监听地址：可用 PORT 环境变量覆盖（默认 :9105），便于发布平台统一端口。
+func listenAddr() string {
+	if p := os.Getenv("PORT"); p != "" {
+		return ":" + p
+	}
+	return ":9105"
+}
 
 // theStore 全局业务状态，由 actor 与 WS 组件共享（内部互斥锁保证并发安全）。
 var theStore = NewStore(dataFile)
 
 func main() {
+	addr := listenAddr()
 	app := cherry.Configure(configPath, "wgjx-1", false, cherry.Standalone)
 	app.SetSerializer(cserializer.NewJSON())
 	app.AddActors(&wgjxActor{})
-	app.Register(NewWsComponent(theStore, listenAddr))
+	app.Register(NewWsComponent(theStore, addr, staticDir))
 	app.Startup()
 }

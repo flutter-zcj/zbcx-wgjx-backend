@@ -11,3 +11,6 @@
 .vscode/
 *.sw?
 .DS_Store
+
+# 前端 H5 构建产物（由前端仓库构建后拷贝，不入库）
+/public
