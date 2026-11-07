@@ -1,0 +1,13 @@
+# 运行时生成的数据文件（排行榜/存档落盘）
+/wgjx_data.json
+/wgjx_data.json.tmp
+
+# 编译产物
+/wgjx-server
+*.exe
+
+# 编辑器
+.idea/
+.vscode/
+*.sw?
+.DS_Store

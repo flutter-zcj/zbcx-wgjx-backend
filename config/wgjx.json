@@ -1,0 +1,33 @@
+{
+  "env": "wgjx",
+  "debug": true,
+  "print_level": "debug",
+  "cluster": {
+    "discovery": {
+      "mode": "nats"
+    },
+    "nats": {
+      "master_node_id": "wgjx-master",
+      "address": "nats://127.0.0.1:4222",
+      "reconnect_delay": 1,
+      "max_reconnects": 0,
+      "request_timeout": 2
+    }
+  },
+  "node": {
+    "master": [
+      {
+        "enabled": true,
+        "node_id": "wgjx-master",
+        "address": ""
+      }
+    ],
+    "wgjx": [
+      {
+        "enabled": true,
+        "node_id": "wgjx-1",
+        "address": ""
+      }
+    ]
+  }
+}
