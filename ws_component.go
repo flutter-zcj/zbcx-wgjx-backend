@@ -158,21 +158,60 @@ func (c *WsComponent) handle(cmd string, data json.RawMessage) *WsResp {
 	case "login":
 		var req struct {
 			Nickname string `json:"nickname"`
+			PlayerID string `json:"playerId"`
 		}
 		_ = json.Unmarshal(data, &req)
-		id, best := c.store.Login("", req.Nickname)
-		return &WsResp{Data: map[string]interface{}{"playerId": id, "best": best}}
+		id, best, profile, season := c.store.Login(req.PlayerID, req.Nickname)
+		return &WsResp{Data: map[string]interface{}{
+			"playerId": id,
+			"best":     best,
+			"profile":  profile,
+			"season":   season,
+		}}
 	case "submitScore":
 		var req struct {
-			Nickname string `json:"nickname"`
-			Score    int    `json:"score"`
-			Win      bool   `json:"win"`
+			PlayerID     string `json:"playerId"`
+			Nickname     string `json:"nickname"`
+			Score        int    `json:"score"`
+			Win          bool   `json:"win"`
+			Civilization string `json:"civilization"`
+			Commander    string `json:"commander"`
+			Age          int    `json:"age"`
 		}
 		_ = json.Unmarshal(data, &req)
-		rank, list := c.store.SubmitScore("", req.Nickname, req.Score, req.Win)
-		return &WsResp{Data: map[string]interface{}{"rank": rank, "list": list}}
+		rank, list, season, best := c.store.SubmitScore(
+			req.PlayerID, req.Nickname, req.Civilization, req.Commander, req.Score, req.Age, req.Win,
+		)
+		return &WsResp{Data: map[string]interface{}{
+			"rank":   rank,
+			"list":   list,
+			"season": season,
+			"best":   best,
+		}}
 	case "getLeaderboard":
-		return &WsResp{Data: map[string]interface{}{"list": c.store.GetLeaderboard()}}
+		var req struct {
+			Season string `json:"season"`
+		}
+		_ = json.Unmarshal(data, &req)
+		list, season := c.store.GetLeaderboard(req.Season)
+		return &WsResp{Data: map[string]interface{}{"list": list, "season": season}}
+	case "saveProfile":
+		var req struct {
+			PlayerID string  `json:"playerId"`
+			Profile  Profile `json:"profile"`
+		}
+		_ = json.Unmarshal(data, &req)
+		c.store.SaveProfile(req.PlayerID, req.Profile)
+		return &WsResp{Data: map[string]interface{}{"ok": true, "season": CurrentSeason()}}
+	case "loadProfile":
+		var req struct {
+			PlayerID string `json:"playerId"`
+		}
+		_ = json.Unmarshal(data, &req)
+		return &WsResp{Data: map[string]interface{}{
+			"profile": c.store.LoadProfile(req.PlayerID),
+			"season":  CurrentSeason(),
+		}}
 	case "save":
 		var req struct {
 			PlayerID string          `json:"playerId"`
